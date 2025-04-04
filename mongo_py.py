@@ -1,5 +1,6 @@
 from pymongo import MongoClient
 from bson import ObjectId
+import time
 
 def imprimir_separador(titulo):
     print("\n" + "="*50)
@@ -9,7 +10,7 @@ def imprimir_separador(titulo):
 
 try:
     cliente=MongoClient("mongodb://localhost:27017/")
-    db=cliente("uno")
+    db=cliente["uno"]
     print("Conexion exitosa a mongo :)")
 except Exception as e:
     print(f"Error al conectarse: {e}")
@@ -30,7 +31,7 @@ doc={
     "stock":10
 }
 resultado=productos.insert_one(doc)
-print(f"ID del documento insertado: {resultado.insert_id}")
+print(f"ID del documento insertado: {resultado.inserted_id}")
 
 imprimir_separador("2. Insertar multiples documentos")
 nuevos_productos=[
@@ -85,12 +86,57 @@ indice=productos.create_index("nombre")
 print(f"indice creado: {indice}")
 
 imprimir_separador("12. Agregacion - Productos por rango de precio")
-pipeline=[
+pipeline = [
     {
-        "$group":{
-            "_id":{
-                
-            }
+        "$group": {
+            "_id": {
+                "$switch": {
+                    "branches": [
+                        {"case": {"$lt": ["$precio", 10000]}, "then": "Económico"},
+                        {"case": {"$lt": ["$precio", 15000]}, "then": "Medio"},
+                    ],
+                    "default": "Premium"
+                }
+            },
+            "cantidad": {"$sum": 1},
+            "precio_promedio": {"$avg": "$precio"}
         }
     }
 ]
+for resultado in productos.aggregate(pipeline):
+    print(resultado)
+
+
+imprimir_separador("13. Ejemplo de $lookup (unión de colecciones)")
+pedido_id = pedidos.insert_one({
+    "fecha": "2024-01-20",
+    "cliente": "Cliente Ejemplo"
+}).inserted_id
+
+detalles_pedido.insert_many([
+    {"pedidoId": pedido_id, "producto": "Regadera", "cantidad": 1},
+    {"pedidoId": pedido_id, "producto": "Maceta", "cantidad": 2}
+])
+
+pipeline = [
+    {
+        "$lookup": {
+            "from": "detalles_pedido",
+            "localField": "_id",
+            "foreignField": "pedidoId",
+            "as": "detalles"
+        }
+    }
+]
+for pedido in pedidos.aggregate(pipeline):
+    print("Pedido completo con sus detalles:")
+    print(pedido)
+
+# 14. Eliminar un documento
+imprimir_separador("14. Eliminar un documento")
+resultado = productos.delete_one({"nombre": "Tijera"})
+print(f"Cantidad de documentos eliminados: {resultado.deleted_count}")
+
+# Cerrar conexión
+cliente.close()
+print("\nDemostración completada. Conexión cerrada.")
